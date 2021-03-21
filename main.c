@@ -72,12 +72,16 @@ struct client_state {
     struct wl_surface *wl_surface;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
+    struct zwp_idle_inhibitor_v1 *inhibitor1;
+    struct zwp_idle_inhibitor_v1 *inhibitor2;
     bool closed;
 };
 
 static void
 wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
 {
+    (void) data;
+
     /* Sent by the compositor when it's no longer using this buffer */
     wl_buffer_destroy(wl_buffer);
 }
@@ -131,12 +135,19 @@ xdg_toplevel_configure(void *data,
 		struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height,
 		struct wl_array *states)
 {
+    (void) data;
+    (void) xdg_toplevel;
+    (void) width;
+    (void) height;
+    (void) states;
+
     /* */
 }
 
 static void
 xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel)
 {
+    (void) toplevel;
 	struct client_state *state = data;
 	state->closed = true;
 }
@@ -150,6 +161,8 @@ static void
 xdg_surface_configure(void *data,
         struct xdg_surface *xdg_surface, uint32_t serial)
 {
+    (void) serial;
+
     struct client_state *state = data;
     xdg_surface_ack_configure(xdg_surface, serial);
 
@@ -158,10 +171,12 @@ xdg_surface_configure(void *data,
     wl_surface_commit(state->wl_surface);
 
     /* Create & never destory two inhibitors. */
-    zwp_idle_inhibit_manager_v1_create_inhibitor(
-            state->zwp_idle_inhibit_manager, state->wl_surface);
-    /*zwp_idle_inhibit_manager_v1_create_inhibitor(*/
-    /*        state->zwp_idle_inhibit_manager, state->wl_surface);*/
+    if (!state->inhibitor1) {
+        state->inhibitor1 = zwp_idle_inhibit_manager_v1_create_inhibitor(
+                state->zwp_idle_inhibit_manager, state->wl_surface);
+        state->inhibitor2 = zwp_idle_inhibit_manager_v1_create_inhibitor(
+                state->zwp_idle_inhibit_manager, state->wl_surface);
+    }
 }
 
 static const struct xdg_surface_listener xdg_surface_listener = {
@@ -171,6 +186,8 @@ static const struct xdg_surface_listener xdg_surface_listener = {
 static void
 xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial)
 {
+    (void) data;
+
     xdg_wm_base_pong(xdg_wm_base, serial);
 }
 
@@ -182,6 +199,8 @@ static void
 registry_global(void *data, struct wl_registry *wl_registry,
         uint32_t name, const char *interface, uint32_t version)
 {
+    (void) version;
+
     struct client_state *state = data;
     if (strcmp(interface, wl_shm_interface.name) == 0) {
         state->wl_shm = wl_registry_bind(
@@ -204,6 +223,10 @@ static void
 registry_global_remove(void *data,
         struct wl_registry *wl_registry, uint32_t name)
 {
+    (void) data;
+    (void) wl_registry;
+    (void) name;
+
     /* This space deliberately left blank */
 }
 
@@ -215,6 +238,9 @@ static const struct wl_registry_listener wl_registry_listener = {
 int
 main(int argc, char *argv[])
 {
+    (void) argc;
+    (void) argv;
+
     struct client_state state = { 0 };
     state.closed = false;
     state.wl_display = wl_display_connect(NULL);
@@ -222,7 +248,11 @@ main(int argc, char *argv[])
     wl_registry_add_listener(state.wl_registry, &wl_registry_listener, &state);
     wl_display_roundtrip(state.wl_display);
 
+    state.inhibitor1 = NULL;
+    state.inhibitor2 = NULL;
     state.wl_surface = wl_compositor_create_surface(state.wl_compositor);
+    /*state.inhibitor2 = zwp_idle_inhibit_manager_v1_create_inhibitor(*/
+    /*        state.zwp_idle_inhibit_manager, state.wl_surface);*/
     state.xdg_surface = xdg_wm_base_get_xdg_surface(
             state.xdg_wm_base, state.wl_surface);
     xdg_surface_add_listener(state.xdg_surface, &xdg_surface_listener, &state);
@@ -236,7 +266,14 @@ main(int argc, char *argv[])
         /* Run until the window is closed. */
     }
 
-    /* Don't destroy anything. */
+    xdg_toplevel_destroy(state.xdg_toplevel);
+    xdg_surface_destroy(state.xdg_surface);
+    wl_display_roundtrip(state.wl_display);
+    /*sleep(1);*/
+    /*zwp_idle_inhibitor_v1_destroy(state.inhibitor1);*/
+    /*wl_display_roundtrip(state.wl_display);*/
+    /*wl_surface_destroy(state.wl_surface);*/
+
     return 0;
 }
 
